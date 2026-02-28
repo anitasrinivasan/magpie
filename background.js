@@ -20,6 +20,7 @@ const LINKEDIN_MD_COLUMNS = [
 
 // Must register listener synchronously at top level (MV3 requirement)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Magpie background: received message', message.action, message.platform);
   if (message.action === 'downloadExport') {
     handleMarkdownDownload(message.platform, message.data);
     sendResponse({ success: true });
@@ -28,7 +29,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 function handleMarkdownDownload(platform, rows) {
-  if (!rows || rows.length === 0) return;
+  if (!rows || rows.length === 0) {
+    console.warn('Magpie background: no rows to download');
+    return;
+  }
+
+  console.log('Magpie background: generating markdown for', rows.length, 'rows');
 
   const columns = platform === 'twitter' ? TWITTER_MD_COLUMNS : LINKEDIN_MD_COLUMNS;
   const title = platform === 'twitter' ? 'Twitter Bookmarks' : 'LinkedIn Saved Posts';
@@ -36,11 +42,21 @@ function handleMarkdownDownload(platform, rows) {
   const mdContent = generateMarkdown(columns, rows, title, date);
   const filename = `magpie_${platform}_${date}.md`;
 
-  const dataUrl = 'data:text/markdown;charset=utf-8,' + encodeURIComponent(mdContent);
+  console.log('Magpie background: markdown generated,', mdContent.length, 'chars. Starting download...');
+
+  // Use text/plain — more reliable than text/markdown across Chrome versions
+  const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(mdContent);
+
   chrome.downloads.download({
     url: dataUrl,
     filename: filename,
     saveAs: true
+  }, (downloadId) => {
+    if (chrome.runtime.lastError) {
+      console.error('Magpie download failed:', chrome.runtime.lastError.message);
+    } else {
+      console.log('Magpie download started, id:', downloadId);
+    }
   });
 }
 

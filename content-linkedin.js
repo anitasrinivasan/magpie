@@ -117,14 +117,22 @@
       await sleep(500);
     }
 
-    // Send data to background for CSV download
+    // Send data to background for download
     if (extractedPosts.length > 0) {
       sendProgress('Generating export...', extractedPosts.length, totalScanned);
+
+      console.log('Magpie: sending', extractedPosts.length, 'LinkedIn posts to background');
 
       chrome.runtime.sendMessage({
         action: 'downloadExport',
         platform: 'linkedin',
         data: extractedPosts
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Magpie: sendMessage failed:', chrome.runtime.lastError.message);
+        } else {
+          console.log('Magpie: background acknowledged download request');
+        }
       });
 
       const newUrls = extractedPosts.map(p => p['Post URL']);
