@@ -1,16 +1,21 @@
 // content-twitter.js — Extract bookmarked tweets from x.com/i/bookmarks
+// Injected on all x.com pages (Twitter is a SPA, so we need broad matching)
 
 (() => {
   let stopRequested = false;
   let isExtracting = false;
   let port = null;
 
+  console.log('Magpie: content-twitter.js loaded on', window.location.href);
+
   // Listen for port connections from popup
   chrome.runtime.onConnect.addListener((incomingPort) => {
     if (incomingPort.name !== 'magpie') return;
+    console.log('Magpie: popup connected');
     port = incomingPort;
 
     port.onMessage.addListener((msg) => {
+      console.log('Magpie: received message', msg);
       if (msg.action === 'start' && !isExtracting) {
         startExtraction();
       } else if (msg.action === 'stop') {
@@ -25,13 +30,11 @@
 
     port.onDisconnect.addListener(() => {
       port = null;
-      // Extraction continues even if popup closes
     });
   });
 
   function sendProgress(status, newCount, totalScanned) {
     const msg = { action: 'progress', platform: 'twitter', status, newCount, totalScanned };
-    // Send to popup via port if open
     if (port) {
       try { port.postMessage(msg); } catch (e) { /* popup closed */ }
     }
@@ -45,8 +48,17 @@
   }
 
   async function startExtraction() {
+    // Verify we're on the bookmarks page
+    if (!window.location.href.includes('/i/bookmarks')) {
+      sendProgress('Not on bookmarks page. Navigate to x.com/i/bookmarks first.', 0, 0);
+      sendDone(0, true);
+      return;
+    }
+
     isExtracting = true;
     stopRequested = false;
+
+    console.log('Magpie: starting extraction');
 
     const existingUrls = await getStoredUrls('twitter');
     const knownUrls = new Set(existingUrls);
@@ -85,13 +97,13 @@
             );
           }
         } catch (err) {
-          // One broken tweet shouldn't kill the run
           console.warn('Magpie: Failed to extract tweet:', err);
         }
       }
 
       if (!foundNew) {
         noNewRounds++;
+        console.log('Magpie: no new tweets this round, noNewRounds =', noNewRounds);
       } else {
         noNewRounds = 0;
       }
@@ -100,14 +112,16 @@
 
       // Scroll down for more tweets
       sendProgress('Scrolling for more tweets...', extractedPosts.length, totalScanned);
-      window.scrollTo(0, document.body.scrollHeight);
+      scrollDown();
       await sleep(1500);
 
       // Small delay between rounds
       await sleep(500);
     }
 
-    // Send data to background for CSV download
+    console.log('Magpie: extraction loop finished. Extracted:', extractedPosts.length);
+
+    // Send data to background for download
     if (extractedPosts.length > 0) {
       sendProgress('Generating export...', extractedPosts.length, totalScanned);
 
@@ -125,6 +139,26 @@
     sendDone(extractedPosts.length, stopRequested);
     isExtracting = false;
     stopRequested = false;
+  }
+
+  function scrollDown() {
+    // Try multiple scroll methods — Twitter's layout can vary
+    // Method 1: scroll the primary column container
+    const primaryColumn = document.querySelector('[data-testid="primaryColumn"]');
+    if (primaryColumn) {
+      const scrollable = primaryColumn.closest('[style*="overflow"]') ||
+                         primaryColumn.parentElement;
+      if (scrollable && scrollable.scrollHeight > scrollable.clientHeight) {
+        scrollable.scrollTop = scrollable.scrollHeight;
+        return;
+      }
+    }
+
+    // Method 2: standard window scroll
+    window.scrollTo(0, document.body.scrollHeight);
+
+    // Method 3: also try scrolling the document element
+    document.documentElement.scrollTop = document.documentElement.scrollHeight;
   }
 
   function extractTweetUrl(article) {
@@ -179,7 +213,6 @@
             text !== '·' &&
             text.length > 0 &&
             span.closest('[data-testid="User-Name"]') === userNameEl) {
-          // Check this span doesn't contain child spans (avoid parent spans)
           if (span.querySelector('span') === null || span.children.length === 0) {
             result['Author Name'] = text;
             break;
@@ -203,8 +236,6 @@
     // Tweet type detection
     const hasQuote = article.querySelector('[data-testid="quoteTweet"]') !== null;
     const hasReplyTo = article.textContent.includes('Replying to');
-
-    // Thread detection: "Show this thread" text or self-reply
     const articleText = article.textContent;
     const isThread = articleText.includes('Show this thread');
     result['Is Thread'] = isThread;

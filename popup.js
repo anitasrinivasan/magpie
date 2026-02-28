@@ -53,11 +53,27 @@ document.getElementById('startBtn').addEventListener('click', () => {
   if (!activeTabId || !currentPlatform) return;
 
   // Open a long-lived port to the content script
-  port = chrome.tabs.connect(activeTabId, { name: 'magpie' });
+  try {
+    port = chrome.tabs.connect(activeTabId, { name: 'magpie' });
+  } catch (err) {
+    document.getElementById('statusText').textContent =
+      'Failed to connect. Try refreshing the page (Cmd+Shift+R).';
+    document.getElementById('progressArea').classList.add('visible');
+    return;
+  }
+
   port.postMessage({ action: 'start', platform: currentPlatform });
 
   port.onMessage.addListener(handleMessage);
   port.onDisconnect.addListener(() => {
+    // If port disconnects immediately, the content script isn't there
+    if (port) {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        document.getElementById('statusText').textContent =
+          'Content script not found. Try refreshing the page (Cmd+Shift+R).';
+      }
+    }
     port = null;
   });
 

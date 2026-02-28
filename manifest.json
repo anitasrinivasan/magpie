@@ -19,15 +19,15 @@
   "content_scripts": [
     {
       "matches": [
-        "https://x.com/i/bookmarks*",
-        "https://twitter.com/i/bookmarks*"
+        "https://x.com/*",
+        "https://twitter.com/*"
       ],
       "js": ["storage.js", "content-twitter.js"],
       "run_at": "document_idle"
     },
     {
       "matches": [
-        "https://www.linkedin.com/my-items/saved-posts/*"
+        "https://www.linkedin.com/*"
       ],
       "js": ["storage.js", "content-linkedin.js"],
       "run_at": "document_idle"

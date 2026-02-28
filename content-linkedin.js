@@ -1,12 +1,16 @@
 // content-linkedin.js — Extract saved posts from linkedin.com/my-items/saved-posts/
+// Injected on all linkedin.com pages (LinkedIn is a SPA)
 
 (() => {
   let stopRequested = false;
   let isExtracting = false;
   let port = null;
 
+  console.log('Magpie: content-linkedin.js loaded on', window.location.href);
+
   chrome.runtime.onConnect.addListener((incomingPort) => {
     if (incomingPort.name !== 'magpie') return;
+    console.log('Magpie: popup connected (linkedin)');
     port = incomingPort;
 
     port.onMessage.addListener((msg) => {
@@ -42,6 +46,13 @@
   }
 
   async function startExtraction() {
+    // Verify we're on the saved posts page
+    if (!window.location.href.includes('/my-items/saved-posts')) {
+      sendProgress('Not on saved posts page. Navigate to linkedin.com/my-items/saved-posts first.', 0, 0);
+      sendDone(0, true);
+      return;
+    }
+
     isExtracting = true;
     stopRequested = false;
 
