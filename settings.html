@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Magpie Settings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      max-width: 480px;
+      margin: 60px auto;
+      padding: 32px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 15px;
+      color: #1a1a1a;
+      background: #fafafa;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .header img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    h1 span {
+      font-weight: 400;
+      color: #888;
+      font-size: 16px;
+    }
+
+    .section {
+      margin-bottom: 28px;
+    }
+
+    .section-label {
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #555;
+      margin-bottom: 8px;
+    }
+
+    .folder-display {
+      padding: 14px 16px;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 14px;
+      color: #333;
+      word-break: break-all;
+      margin-bottom: 12px;
+    }
+
+    .folder-display.not-set {
+      color: #b0b0b0;
+      font-style: italic;
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    button:active { transform: scale(0.98); }
+
+    #pickBtn {
+      background: #2d3748;
+      color: #fff;
+    }
+
+    #pickBtn:hover { background: #1a202c; }
+
+    .hint {
+      margin-top: 16px;
+      font-size: 12px;
+      color: #999;
+      line-height: 1.6;
+    }
+
+    .success-msg {
+      display: none;
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      color: #166534;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .success-msg.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="icons/icon48.png" alt="Magpie">
+    <h1>Magpie <span>Settings</span></h1>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Export folder</div>
+    <div id="folderDisplay" class="folder-display not-set">No folder selected</div>
+    <button id="pickBtn">Choose folder</button>
+    <div id="successMsg" class="success-msg">Folder saved. You can close this tab and return to the Magpie popup.</div>
+    <div class="hint">
+      Choose the folder where Magpie should save your bookmarks (.md files).<br>
+      For Obsidian, pick your vault folder or a subfolder within it.<br>
+      This setting persists across sessions. After reinstalling the extension, just pick the same folder again.
+    </div>
+  </div>
+
+  <script src="db.js"></script>
+  <script>
+    const folderDisplay = document.getElementById('folderDisplay');
+    const successMsg = document.getElementById('successMsg');
+
+    // Load existing handle on page load
+    (async () => {
+      try {
+        const handle = await getDirHandle();
+        if (handle) {
+          folderDisplay.textContent = handle.name;
+          folderDisplay.classList.remove('not-set');
+        }
+      } catch (err) {
+        console.warn('Could not load existing handle:', err);
+      }
+    })();
+
+    // Pick folder button
+    document.getElementById('pickBtn').addEventListener('click', async () => {
+      try {
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        await saveDirHandle(handle);
+        folderDisplay.textContent = handle.name;
+        folderDisplay.classList.remove('not-set');
+        successMsg.classList.add('visible');
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error('Folder pick error:', err);
+          folderDisplay.textContent = 'Error: ' + err.message;
+          folderDisplay.classList.remove('not-set');
+        }
+      }
+    });
+  </script>
+</body>
+</html>
