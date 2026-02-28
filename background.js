@@ -44,11 +44,12 @@ function handleMarkdownDownload(platform, rows) {
 
   console.log('Magpie background: markdown generated,', mdContent.length, 'chars. Starting download...');
 
-  // Use text/plain — more reliable than text/markdown across Chrome versions
-  const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(mdContent);
+  // Use Blob URL instead of data URL — data URLs fail on large payloads
+  const blob = new Blob([mdContent], { type: 'text/plain;charset=utf-8' });
+  const blobUrl = URL.createObjectURL(blob);
 
   chrome.downloads.download({
-    url: dataUrl,
+    url: blobUrl,
     filename: filename,
     saveAs: true
   }, (downloadId) => {
@@ -57,6 +58,8 @@ function handleMarkdownDownload(platform, rows) {
     } else {
       console.log('Magpie download started, id:', downloadId);
     }
+    // Clean up blob URL after download starts
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
   });
 }
 
