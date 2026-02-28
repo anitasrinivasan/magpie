@@ -83,8 +83,13 @@
           processedUrls.add(tweetUrl);
           totalScanned++;
 
-          // Skip if already in storage (dedup)
-          if (knownUrls.has(tweetUrl)) continue;
+          // Stop early: bookmarks are reverse-chronological, so hitting
+          // a known URL means everything below is already collected.
+          if (knownUrls.has(tweetUrl)) {
+            console.log('Magpie: hit known bookmark, stopping early:', tweetUrl);
+            stopRequested = true;
+            break;
+          }
 
           const post = extractTweet(article, tweetUrl);
           if (post) {

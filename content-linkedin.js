@@ -85,7 +85,13 @@
           processedUrls.add(postUrl);
           totalScanned++;
 
-          if (knownUrls.has(postUrl)) continue;
+          // Stop early: saved posts are reverse-chronological, so hitting
+          // a known URL means everything below is already collected.
+          if (knownUrls.has(postUrl)) {
+            console.log('Magpie: hit known saved post, stopping early:', postUrl);
+            stopRequested = true;
+            break;
+          }
 
           const post = extractPost(li, postUrl);
           if (post) {

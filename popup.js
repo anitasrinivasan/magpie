@@ -74,7 +74,9 @@ function parsePostsFromMarkdown(content, platform) {
   for (const line of lines) {
     if (!line.startsWith('|')) continue;
     if (line.includes('---')) continue;
-    const cells = line.split('|').map(c => c.trim()).filter(c => c);
+    // Split by | and drop the leading/trailing empty entries (preserving empty cells)
+    const raw = line.split('|').map(c => c.trim());
+    const cells = raw.slice(1, raw.length - 1); // drop first '' and last ''
     if (cells[0] === columns[0].header) continue; // skip header row
     if (cells.length >= columns.length) {
       const post = {};
@@ -99,28 +101,24 @@ function triggerDownload(platform, allPosts) {
   const mdContent = buildFullMarkdown(platform, allPosts);
   const filename = platform === 'twitter' ? 'magpie_twitter.md' : 'magpie_linkedin.md';
 
-  // Use chrome.downloads API with saveAs for consistent Save As dialog
-  const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(mdContent);
+  console.log('Magpie: triggering download,', allPosts.length, 'posts,', mdContent.length, 'chars');
+
+  // Use Blob URL for reliable large-file downloads
+  const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8' });
+  const blobUrl = URL.createObjectURL(blob);
+
   chrome.downloads.download({
-    url: dataUrl,
+    url: blobUrl,
     filename: filename,
     saveAs: true
   }, (downloadId) => {
     if (chrome.runtime.lastError) {
       console.error('Magpie: download failed:', chrome.runtime.lastError.message);
-      // Fallback: anchor tag download
-      const blob = new Blob([mdContent], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 5000);
     } else {
       console.log('Magpie: download started, id:', downloadId);
     }
+    // Clean up blob URL after delay
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
   });
 }
 
@@ -164,7 +162,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('clearBtn').addEventListener('click', async () => {
       await clearStorage(currentPlatform);
-      statsEl.textContent = 'History cleared.';
+      statsEl.innerHTML =
+        'History cleared.' +
+        `<br><span class="action-link" id="importBtn">Import existing file</span>` +
+        `<span id="importStatus"></span>`;
+      setupImport();
     });
     setupImport();
   } else {
@@ -280,28 +282,28 @@ async function handleMessage(msg) {
   }
 
   if (msg.action === 'done' || msg.action === 'stopped') {
-    const isDone = msg.action === 'done';
     const doneFill = document.getElementById('progressFill');
     doneFill.classList.remove('indeterminate');
     doneFill.style.width = '100%';
 
     const newPosts = msg.posts || [];
+    console.log('Magpie: received', msg.action, '— newPosts:', newPosts.length);
 
     if (newPosts.length > 0) {
       try {
         document.getElementById('statusText').textContent = 'Preparing download...';
 
-        // Load stored posts, combine with new, store everything
+        // Load stored posts, prepend new (bookmarks are reverse-chronological)
         const storedPosts = await getStoredPosts(currentPlatform);
-        const allPosts = [...storedPosts, ...newPosts];
+        console.log('Magpie: storedPosts:', storedPosts.length, '+ newPosts:', newPosts.length);
+        const allPosts = [...newPosts, ...storedPosts];
         await setStoredPosts(currentPlatform, allPosts);
 
         // Generate complete file and trigger Save As download
         triggerDownload(currentPlatform, allPosts);
 
-        document.getElementById('statusText').textContent = isDone
-          ? `Done! ${newPosts.length} new posts (${allPosts.length} total).`
-          : `Stopped. ${newPosts.length} new posts (${allPosts.length} total).`;
+        document.getElementById('statusText').textContent =
+          `Done! ${newPosts.length} new posts (${allPosts.length} total).`;
         document.getElementById('countText').textContent =
           'Save the file to your Obsidian vault.';
       } catch (err) {
@@ -310,9 +312,8 @@ async function handleMessage(msg) {
           `Error: ${err.message}`;
       }
     } else {
-      document.getElementById('statusText').textContent = isDone
-        ? 'Done! No new posts found.'
-        : 'Stopped. No new posts collected yet.';
+      document.getElementById('statusText').textContent =
+        'Done! No new posts found — you\'re up to date.';
       document.getElementById('countText').textContent = '';
     }
 
