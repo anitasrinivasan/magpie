@@ -257,11 +257,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initFolderUI();
 });
 
-// Folder picker button — opens settings page in a new tab
-// (showDirectoryPicker doesn't work in extension popups because the popup
-// closes when the native file dialog steals focus)
-document.getElementById('folderPickBtn').addEventListener('click', () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('settings.html') });
+// Folder picker button
+document.getElementById('folderPickBtn').addEventListener('click', async () => {
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    dirHandle = handle;
+    await saveDirHandle(handle);
+    showFolderPath(handle.name);
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error('Magpie: folder pick error:', err);
+      document.getElementById('folderPath').textContent = 'Error: ' + err.message;
+      document.getElementById('folderPath').classList.remove('not-set');
+    }
+  }
 });
 
 // Start button
