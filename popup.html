@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #fafafa;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .header img {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .badge.twitter { background: #e8f5fd; color: #1a8cd8; }
+    .badge.linkedin { background: #e8f0fe; color: #0a66c2; }
+    .badge.none { background: #f0f0f0; color: #888; }
+
+    .stats {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .progress-area {
+      display: none;
+      margin-bottom: 16px;
+    }
+
+    .progress-area.visible { display: block; }
+
+    .status-text {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: #333;
+    }
+
+    .progress-bar-track {
+      height: 6px;
+      background: #e5e5e5;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4CAF50, #66BB6A);
+      width: 0%;
+      transition: width 0.4s ease;
+      border-radius: 3px;
+    }
+
+    .progress-bar-fill.indeterminate {
+      width: 100% !important;
+      background: linear-gradient(
+        90deg, #e5e5e5 0%, #4CAF50 30%, #66BB6A 50%, #4CAF50 70%, #e5e5e5 100%
+      );
+      background-size: 200% 100%;
+      animation: shimmer 1.8s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .count-text {
+      font-size: 12px;
+      color: #888;
+    }
+
+    button {
+      width: 100%;
+      padding: 11px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    #startBtn {
+      background: #2d3748;
+      color: #fff;
+    }
+
+    #startBtn:hover:not(:disabled) { background: #1a202c; }
+
+    #stopBtn {
+      display: none;
+      background: #e53e3e;
+      color: #fff;
+    }
+
+    #stopBtn:hover:not(:disabled) { background: #c53030; }
+
+    .unsupported-msg {
+      display: none;
+      text-align: center;
+      padding: 16px 0;
+      color: #888;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .unsupported-msg.visible { display: block; }
+
+    .clear-link {
+      display: inline-block;
+      margin-top: 12px;
+      font-size: 11px;
+      color: #999;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .clear-link:hover { color: #666; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="icons/icon48.png" alt="Magpie">
+    <h1>Magpie</h1>
+  </div>
+
+  <div id="platformBadge"></div>
+  <div id="stats" class="stats"></div>
+
+  <div id="progressArea" class="progress-area">
+    <div id="statusText" class="status-text"></div>
+    <div class="progress-bar-track">
+      <div id="progressFill" class="progress-bar-fill"></div>
+    </div>
+    <div id="countText" class="count-text"></div>
+  </div>
+
+  <button id="startBtn" disabled>Start Extraction</button>
+  <button id="stopBtn">Stop Extraction</button>
+
+  <div id="unsupportedMsg" class="unsupported-msg">
+    Navigate to one of these pages, then open Magpie:<br>
+    <strong>x.com/i/bookmarks</strong><br>
+    <strong>linkedin.com/my-items/saved-posts</strong>
+  </div>
+
+  <script src="storage.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
