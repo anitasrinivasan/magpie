@@ -38,8 +38,8 @@
     }
   }
 
-  function sendDone(newCount, stopped) {
-    const msg = { action: stopped ? 'stopped' : 'done', platform: 'linkedin', newCount };
+  function sendDone(newCount, stopped, posts) {
+    const msg = { action: stopped ? 'stopped' : 'done', platform: 'linkedin', newCount, posts: posts || [] };
     if (port) {
       try { port.postMessage(msg); } catch (e) { /* popup closed */ }
     }
@@ -117,25 +117,21 @@
       await sleep(500);
     }
 
-    // Generate markdown and download directly from content script
-    // (bypasses service worker — more reliable in MV3)
+    // Save URLs and send data to popup for file write
     if (extractedPosts.length > 0) {
-      sendProgress('Generating export...', extractedPosts.length, totalScanned);
+      try {
+        sendProgress('Generating export...', extractedPosts.length, totalScanned);
+        console.log('Magpie: extracted', extractedPosts.length, 'LinkedIn posts');
 
-      console.log('Magpie: generating markdown for', extractedPosts.length, 'LinkedIn posts');
-
-      const date = new Date().toISOString().slice(0, 10);
-      const mdContent = generateLinkedInMarkdown(extractedPosts, date);
-      const filename = `magpie_linkedin_${date}.md`;
-
-      console.log('Magpie: markdown generated,', mdContent.length, 'chars. Triggering download...');
-      downloadFromContentScript(mdContent, filename);
-
-      const newUrls = extractedPosts.map(p => p['Post URL']);
-      await addUrls('linkedin', newUrls);
+        const newUrls = extractedPosts.map(p => p['Post URL']);
+        await addUrls('linkedin', newUrls);
+      } catch (err) {
+        console.error('Magpie: save error:', err);
+      }
     }
 
-    sendDone(extractedPosts.length, stopRequested);
+    // Always send done with posts — popup handles file write or fallback download
+    sendDone(extractedPosts.length, stopRequested, extractedPosts);
     isExtracting = false;
     stopRequested = false;
   }

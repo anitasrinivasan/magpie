@@ -152,6 +152,48 @@
     }
 
     .clear-link:hover { color: #666; }
+
+    .folder-section {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 16px;
+      line-height: 1.5;
+      padding: 10px 12px;
+      background: #f0f0f0;
+      border-radius: 8px;
+    }
+
+    .folder-section .folder-label {
+      font-weight: 600;
+      color: #333;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 4px;
+    }
+
+    .folder-section .folder-path {
+      font-size: 12px;
+      color: #555;
+      word-break: break-all;
+    }
+
+    .folder-section .folder-path.not-set {
+      color: #b0b0b0;
+      font-style: italic;
+    }
+
+    .folder-link {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 11px;
+      color: #2d3748;
+      cursor: pointer;
+      text-decoration: underline;
+      font-weight: 500;
+    }
+
+    .folder-link:hover { color: #1a202c; }
   </style>
 </head>
 <body>
@@ -162,6 +204,12 @@
 
   <div id="platformBadge"></div>
   <div id="stats" class="stats"></div>
+
+  <div id="folderSection" class="folder-section">
+    <div class="folder-label">Export folder</div>
+    <div id="folderPath" class="folder-path not-set">No folder selected</div>
+    <span id="folderPickBtn" class="folder-link">Set export folder</span>
+  </div>
 
   <div id="progressArea" class="progress-area">
     <div id="statusText" class="status-text"></div>

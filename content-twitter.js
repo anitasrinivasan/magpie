@@ -40,8 +40,8 @@
     }
   }
 
-  function sendDone(newCount, stopped) {
-    const msg = { action: stopped ? 'stopped' : 'done', platform: 'twitter', newCount };
+  function sendDone(newCount, stopped, posts) {
+    const msg = { action: stopped ? 'stopped' : 'done', platform: 'twitter', newCount, posts: posts || [] };
     if (port) {
       try { port.postMessage(msg); } catch (e) { /* popup closed */ }
     }
@@ -121,22 +121,30 @@
 
     console.log('Magpie: extraction loop finished. Extracted:', extractedPosts.length);
 
-    // Send data to background for download
+    // Save URLs and prepare data for popup
     if (extractedPosts.length > 0) {
-      sendProgress('Generating export...', extractedPosts.length, totalScanned);
+      try {
+        sendProgress('Generating export...', extractedPosts.length, totalScanned);
 
-      chrome.runtime.sendMessage({
-        action: 'downloadExport',
-        platform: 'twitter',
-        data: extractedPosts
-      });
+        // Fallback: if popup is closed, send to background for download
+        if (!port) {
+          chrome.runtime.sendMessage({
+            action: 'downloadExport',
+            platform: 'twitter',
+            data: extractedPosts
+          });
+        }
 
-      // Save new URLs to storage for dedup on next run
-      const newUrls = extractedPosts.map(p => p['Tweet URL']);
-      await addUrls('twitter', newUrls);
+        // Save new URLs to storage for dedup on next run
+        const newUrls = extractedPosts.map(p => p['Tweet URL']);
+        await addUrls('twitter', newUrls);
+      } catch (err) {
+        console.error('Magpie: save error:', err);
+      }
     }
 
-    sendDone(extractedPosts.length, stopRequested);
+    // Always send done with posts — popup handles file write or fallback download
+    sendDone(extractedPosts.length, stopRequested, extractedPosts);
     isExtracting = false;
     stopRequested = false;
   }
