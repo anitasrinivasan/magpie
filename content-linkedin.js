@@ -117,23 +117,19 @@
       await sleep(500);
     }
 
-    // Send data to background for download
+    // Generate markdown and download directly from content script
+    // (bypasses service worker — more reliable in MV3)
     if (extractedPosts.length > 0) {
       sendProgress('Generating export...', extractedPosts.length, totalScanned);
 
-      console.log('Magpie: sending', extractedPosts.length, 'LinkedIn posts to background');
+      console.log('Magpie: generating markdown for', extractedPosts.length, 'LinkedIn posts');
 
-      chrome.runtime.sendMessage({
-        action: 'downloadExport',
-        platform: 'linkedin',
-        data: extractedPosts
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('Magpie: sendMessage failed:', chrome.runtime.lastError.message);
-        } else {
-          console.log('Magpie: background acknowledged download request');
-        }
-      });
+      const date = new Date().toISOString().slice(0, 10);
+      const mdContent = generateLinkedInMarkdown(extractedPosts, date);
+      const filename = `magpie_linkedin_${date}.md`;
+
+      console.log('Magpie: markdown generated,', mdContent.length, 'chars. Triggering download...');
+      downloadFromContentScript(mdContent, filename);
 
       const newUrls = extractedPosts.map(p => p['Post URL']);
       await addUrls('linkedin', newUrls);
@@ -324,6 +320,63 @@
     }
 
     return result;
+  }
+
+  // --- Markdown generation (local to content script) ---
+
+  const LINKEDIN_MD_COLUMNS = [
+    { header: 'Author', key: 'Author Name' },
+    { header: 'Profile', key: 'Author Profile URL' },
+    { header: 'Post URL', key: 'Post URL' },
+    { header: 'Type', key: 'Post Type' },
+    { header: 'Timestamp', key: 'Timestamp' },
+    { header: 'Preview', key: 'Preview Text' }
+  ];
+
+  function generateLinkedInMarkdown(rows, date) {
+    const lines = [];
+    lines.push(`# Magpie Export -- LinkedIn Saved Posts`);
+    lines.push(`**Exported:** ${date}  `);
+    lines.push(`**New bookmarks in this batch:** ${rows.length}`);
+    lines.push('');
+    lines.push('| ' + LINKEDIN_MD_COLUMNS.map(c => c.header).join(' | ') + ' |');
+    lines.push('| ' + LINKEDIN_MD_COLUMNS.map(() => '---').join(' | ') + ' |');
+    for (const row of rows) {
+      const cells = LINKEDIN_MD_COLUMNS.map(c => escapeMarkdownCell(row[c.key]));
+      lines.push('| ' + cells.join(' | ') + ' |');
+    }
+    lines.push('');
+    lines.push('<!-- Append these rows to your main bookmarks file, or keep as a standalone note. -->');
+    return lines.join('\n');
+  }
+
+  function escapeMarkdownCell(val) {
+    if (val == null || val === false) return '';
+    let str = String(val);
+    str = str.replace(/[\r\n]+/g, ' ');
+    str = str.replace(/\|/g, '\\|');
+    str = str.replace(/\s+/g, ' ').trim();
+    return str;
+  }
+
+  function downloadFromContentScript(content, filename) {
+    try {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      console.log('Magpie: download triggered from content script for', filename);
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 5000);
+    } catch (err) {
+      console.error('Magpie: content script download failed:', err);
+    }
   }
 
   function sleep(ms) {
