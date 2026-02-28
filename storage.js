@@ -3,11 +3,13 @@
 const STORAGE_KEYS = {
   twitter: {
     urls: 'magpie_twitter_urls',
+    posts: 'magpie_twitter_posts',
     lastRun: 'magpie_twitter_last_run',
     total: 'magpie_twitter_total_count'
   },
   linkedin: {
     urls: 'magpie_linkedin_urls',
+    posts: 'magpie_linkedin_posts',
     lastRun: 'magpie_linkedin_last_run',
     total: 'magpie_linkedin_total_count'
   }
@@ -59,7 +61,18 @@ async function getStats(platform) {
   };
 }
 
+async function getStoredPosts(platform) {
+  const key = STORAGE_KEYS[platform].posts;
+  const result = await chrome.storage.local.get(key);
+  return result[key] || [];
+}
+
+async function setStoredPosts(platform, posts) {
+  const key = STORAGE_KEYS[platform].posts;
+  await chrome.storage.local.set({ [key]: posts });
+}
+
 async function clearStorage(platform) {
   const keys = STORAGE_KEYS[platform];
-  await chrome.storage.local.remove([keys.urls, keys.lastRun, keys.total]);
+  await chrome.storage.local.remove([keys.urls, keys.posts, keys.lastRun, keys.total]);
 }

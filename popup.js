@@ -1,11 +1,9 @@
 // popup.js — Popup UI logic: detect platform, control extraction, show progress,
-// manage export folder (File System Access API), and write .md files.
-// IndexedDB helpers (openDB, saveDirHandle, getDirHandle) are in db.js.
+// generate complete markdown files (all posts), and trigger Save As downloads.
 
 let currentPlatform = null;
 let activeTabId = null;
 let port = null;
-let dirHandle = null; // FileSystemDirectoryHandle for export folder
 
 // ─── Markdown column definitions ─────────────────────────────────────────────
 
@@ -27,15 +25,15 @@ const LINKEDIN_MD_COLUMNS = [
   { header: 'Preview', key: 'Preview Text' }
 ];
 
-// ─── Markdown file read / write / append ─────────────────────────────────────
-
 function getColumns(platform) {
   return platform === 'twitter' ? TWITTER_MD_COLUMNS : LINKEDIN_MD_COLUMNS;
 }
 
-function getFilename(platform) {
-  return platform === 'twitter' ? 'magpie_twitter.md' : 'magpie_linkedin.md';
+function getUrlKey(platform) {
+  return platform === 'twitter' ? 'Tweet URL' : 'Post URL';
 }
+
+// ─── Markdown generation ─────────────────────────────────────────────────────
 
 function escapeMarkdownCell(val) {
   if (val == null || val === false) return '';
@@ -46,39 +44,6 @@ function escapeMarkdownCell(val) {
   return str;
 }
 
-/** Read existing .md file from the directory handle. Returns '' if not found. */
-async function readExistingFile(handle, filename) {
-  try {
-    const fileHandle = await handle.getFileHandle(filename);
-    const file = await fileHandle.getFile();
-    return await file.text();
-  } catch {
-    return ''; // file doesn't exist yet
-  }
-}
-
-/** Parse URLs from a markdown table for dedup. URL is always the 3rd column. */
-function parseUrlsFromMarkdown(content) {
-  if (!content) return [];
-  const urls = [];
-  const lines = content.split('\n');
-  for (const line of lines) {
-    if (!line.startsWith('|')) continue;
-    // Skip header and separator rows
-    if (line.includes('---')) continue;
-    const cells = line.split('|').map(c => c.trim()).filter(c => c);
-    // URL is the 3rd column (index 2) for both platforms
-    if (cells.length > 2) {
-      const url = cells[2].trim();
-      if (url.startsWith('http')) {
-        urls.push(url);
-      }
-    }
-  }
-  return urls;
-}
-
-/** Build a full markdown file with header + all rows. */
 function buildFullMarkdown(platform, allRows) {
   const columns = getColumns(platform);
   const title = platform === 'twitter' ? 'Twitter Bookmarks' : 'LinkedIn Saved Posts';
@@ -99,118 +64,69 @@ function buildFullMarkdown(platform, allRows) {
   return lines.join('\n');
 }
 
-/** Parse existing markdown rows back into objects so we can rebuild the file. */
-function parseRowsFromMarkdown(content, platform) {
+// ─── Import: parse existing .md file to recover posts ────────────────────────
+
+function parsePostsFromMarkdown(content, platform) {
   if (!content) return [];
   const columns = getColumns(platform);
-  const rows = [];
+  const posts = [];
   const lines = content.split('\n');
   for (const line of lines) {
     if (!line.startsWith('|')) continue;
     if (line.includes('---')) continue;
     const cells = line.split('|').map(c => c.trim()).filter(c => c);
-    // Skip header row (check if first cell matches first column header)
-    if (cells[0] === columns[0].header) continue;
+    if (cells[0] === columns[0].header) continue; // skip header row
     if (cells.length >= columns.length) {
-      const row = {};
+      const post = {};
       columns.forEach((col, i) => {
-        row[col.key] = cells[i] || '';
+        post[col.key] = cells[i] || '';
       });
-      rows.push(row);
+      posts.push(post);
     }
   }
-  return rows;
+  return posts;
 }
 
-/** Append new posts to the existing file, or create it if it doesn't exist. */
-async function appendToFile(handle, platform, newPosts) {
-  const filename = getFilename(platform);
-  const existingContent = await readExistingFile(handle, filename);
-
-  // Parse existing rows
-  const existingRows = parseRowsFromMarkdown(existingContent, platform);
-
-  // Combine (existing + new)
-  const allRows = [...existingRows, ...newPosts];
-
-  // Rebuild the full file
-  const mdContent = buildFullMarkdown(platform, allRows);
-
-  // Write to disk
-  const fileHandle = await handle.getFileHandle(filename, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(mdContent);
-  await writable.close();
-
-  console.log('Magpie: wrote', allRows.length, 'total rows to', filename);
-  return { total: allRows.length, added: newPosts.length };
+function detectPlatformFromMarkdown(content) {
+  if (content.includes('Twitter Bookmarks')) return 'twitter';
+  if (content.includes('LinkedIn Saved Posts')) return 'linkedin';
+  return null;
 }
 
-/** Fallback: download via Blob URL + anchor tag if no dir handle is set. */
-function downloadFallback(platform, posts) {
-  const columns = getColumns(platform);
-  const title = platform === 'twitter' ? 'Twitter Bookmarks' : 'LinkedIn Saved Posts';
-  const date = new Date().toISOString().slice(0, 10);
+// ─── Download via Save As ────────────────────────────────────────────────────
 
-  const lines = [];
-  lines.push(`# Magpie Export — ${title}`);
-  lines.push(`**Exported:** ${date}  `);
-  lines.push(`**New bookmarks in this batch:** ${posts.length}`);
-  lines.push('');
-  lines.push('| ' + columns.map(c => c.header).join(' | ') + ' |');
-  lines.push('| ' + columns.map(() => '---').join(' | ') + ' |');
-  for (const row of posts) {
-    const cells = columns.map(c => escapeMarkdownCell(row[c.key]));
-    lines.push('| ' + cells.join(' | ') + ' |');
-  }
-  lines.push('');
+function triggerDownload(platform, allPosts) {
+  const mdContent = buildFullMarkdown(platform, allPosts);
+  const filename = platform === 'twitter' ? 'magpie_twitter.md' : 'magpie_linkedin.md';
 
-  const mdContent = lines.join('\n');
-  const blob = new Blob([mdContent], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `magpie_${platform}_${date}.md`;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 5000);
-}
-
-// ─── Folder picker UI ────────────────────────────────────────────────────────
-
-async function initFolderUI() {
-  try {
-    dirHandle = await getDirHandle();
-    if (dirHandle) {
-      // Verify we still have permission (read-only check, no user gesture needed)
-      const perm = await dirHandle.queryPermission({ mode: 'readwrite' });
-      if (perm === 'granted') {
-        showFolderPath(dirHandle.name);
-      } else {
-        // We have a handle but no permission yet — will request on Start click
-        showFolderPath(dirHandle.name + ' (click Start to re-authorize)');
-      }
+  // Use chrome.downloads API with saveAs for consistent Save As dialog
+  const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(mdContent);
+  chrome.downloads.download({
+    url: dataUrl,
+    filename: filename,
+    saveAs: true
+  }, (downloadId) => {
+    if (chrome.runtime.lastError) {
+      console.error('Magpie: download failed:', chrome.runtime.lastError.message);
+      // Fallback: anchor tag download
+      const blob = new Blob([mdContent], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 5000);
+    } else {
+      console.log('Magpie: download started, id:', downloadId);
     }
-  } catch (err) {
-    console.warn('Magpie: could not load dir handle:', err);
-    dirHandle = null;
-  }
-}
-
-function showFolderPath(name) {
-  const el = document.getElementById('folderPath');
-  el.textContent = name;
-  el.classList.remove('not-set');
+  });
 }
 
 // ─── Main popup logic ────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Detect which page the active tab is on
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   activeTabId = tab.id;
   const url = tab.url || '';
@@ -224,7 +140,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else {
     showBadge('Unsupported page', 'none');
     document.getElementById('startBtn').style.display = 'none';
-    document.getElementById('folderSection').style.display = 'none';
     document.getElementById('unsupportedMsg').classList.add('visible');
     return;
   }
@@ -243,70 +158,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     statsEl.innerHTML =
       `Last run: ${formatted}<br>` +
       `Total extracted: ${stats.totalExtracted} posts` +
-      `<br><span class="clear-link" id="clearBtn">Clear history</span>`;
+      `<br><span class="action-link" id="clearBtn">Clear history</span>` +
+      ` · <span class="action-link" id="importBtn">Import existing file</span>` +
+      `<span id="importStatus"></span>`;
 
     document.getElementById('clearBtn').addEventListener('click', async () => {
       await clearStorage(currentPlatform);
       statsEl.textContent = 'History cleared.';
     });
+    setupImport();
   } else {
-    statsEl.textContent = 'No previous extractions.';
+    statsEl.innerHTML =
+      'No previous extractions.' +
+      `<br><span class="action-link" id="importBtn">Import existing file</span>` +
+      `<span id="importStatus"></span>`;
+    setupImport();
   }
-
-  // Init folder UI
-  await initFolderUI();
 });
 
-// Folder picker button
-document.getElementById('folderPickBtn').addEventListener('click', async () => {
-  try {
-    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-    dirHandle = handle;
-    await saveDirHandle(handle);
-    showFolderPath(handle.name);
-  } catch (err) {
-    if (err.name !== 'AbortError') {
-      console.error('Magpie: folder pick error:', err);
-      document.getElementById('folderPath').textContent = 'Error: ' + err.message;
-      document.getElementById('folderPath').classList.remove('not-set');
+function setupImport() {
+  const importBtn = document.getElementById('importBtn');
+  const importFile = document.getElementById('importFile');
+
+  importBtn.addEventListener('click', () => {
+    importFile.click();
+  });
+
+  importFile.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const statusEl = document.getElementById('importStatus');
+    statusEl.textContent = 'Importing...';
+
+    try {
+      const content = await file.text();
+      const detectedPlatform = detectPlatformFromMarkdown(content);
+
+      if (!detectedPlatform) {
+        statusEl.textContent = 'Could not detect platform from file.';
+        return;
+      }
+
+      const posts = parsePostsFromMarkdown(content, detectedPlatform);
+      if (posts.length === 0) {
+        statusEl.textContent = 'No bookmarks found in file.';
+        return;
+      }
+
+      // Store posts and URLs
+      const urlKey = getUrlKey(detectedPlatform);
+      const urls = posts.map(p => p[urlKey]).filter(u => u);
+      await setStoredPosts(detectedPlatform, posts);
+      await addUrls(detectedPlatform, urls);
+
+      statusEl.textContent = `Imported ${posts.length} ${detectedPlatform} bookmarks.`;
+    } catch (err) {
+      console.error('Magpie: import error:', err);
+      statusEl.textContent = 'Import failed: ' + err.message;
     }
-  }
-});
+  });
+}
 
 // Start button
 document.getElementById('startBtn').addEventListener('click', async () => {
   if (!activeTabId || !currentPlatform) return;
-
-  // If we have a dir handle, ensure read/write permission (this is a user gesture)
-  if (dirHandle) {
-    try {
-      const perm = await dirHandle.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') {
-        dirHandle = null;
-        showFolderPath('Permission denied — will download instead');
-      }
-    } catch (err) {
-      console.warn('Magpie: dir permission error:', err);
-      dirHandle = null;
-    }
-  }
-
-  // Seed dedup from existing file (if dir handle is set)
-  if (dirHandle) {
-    try {
-      const filename = getFilename(currentPlatform);
-      const content = await readExistingFile(dirHandle, filename);
-      if (content) {
-        const urls = parseUrlsFromMarkdown(content);
-        if (urls.length > 0) {
-          await addUrls(currentPlatform, urls);
-          console.log('Magpie: seeded', urls.length, 'URLs from existing file');
-        }
-      }
-    } catch (err) {
-      console.warn('Magpie: could not seed dedup from file:', err);
-    }
-  }
 
   // Open a long-lived port to the content script
   try {
@@ -357,7 +273,6 @@ async function handleMessage(msg) {
     document.getElementById('countText').textContent =
       `New posts: ${msg.newCount}  |  Scanned: ${msg.totalScanned}`;
 
-    // Indeterminate progress bar (no known total)
     const fill = document.getElementById('progressFill');
     if (!fill.classList.contains('indeterminate')) {
       fill.classList.add('indeterminate');
@@ -370,37 +285,29 @@ async function handleMessage(msg) {
     doneFill.classList.remove('indeterminate');
     doneFill.style.width = '100%';
 
-    const posts = msg.posts || [];
+    const newPosts = msg.posts || [];
 
-    if (posts.length > 0) {
-      // Write to file or download
+    if (newPosts.length > 0) {
       try {
-        if (dirHandle) {
-          document.getElementById('statusText').textContent = 'Writing to file...';
-          const result = await appendToFile(dirHandle, currentPlatform, posts);
-          document.getElementById('statusText').textContent = isDone
-            ? `Done! Added ${result.added} new posts (${result.total} total).`
-            : `Stopped. Added ${result.added} posts (${result.total} total).`;
-          document.getElementById('countText').textContent =
-            `Saved to ${getFilename(currentPlatform)}`;
-        } else {
-          // Fallback: download file
-          downloadFallback(currentPlatform, posts);
-          document.getElementById('statusText').textContent = isDone
-            ? `Done! Extracted ${posts.length} new posts.`
-            : `Stopped. Extracted ${posts.length} posts.`;
-          document.getElementById('countText').textContent =
-            'Markdown file download should appear shortly.';
-        }
-      } catch (err) {
-        console.error('Magpie: file write/download error:', err);
-        // Try fallback download if file write failed
-        try { downloadFallback(currentPlatform, posts); } catch (e) { /* give up */ }
+        document.getElementById('statusText').textContent = 'Preparing download...';
+
+        // Load stored posts, combine with new, store everything
+        const storedPosts = await getStoredPosts(currentPlatform);
+        const allPosts = [...storedPosts, ...newPosts];
+        await setStoredPosts(currentPlatform, allPosts);
+
+        // Generate complete file and trigger Save As download
+        triggerDownload(currentPlatform, allPosts);
+
         document.getElementById('statusText').textContent = isDone
-          ? `Done! Extracted ${posts.length} new posts (file write failed, downloaded instead).`
-          : `Stopped. Extracted ${posts.length} posts (file write failed, downloaded instead).`;
+          ? `Done! ${newPosts.length} new posts (${allPosts.length} total).`
+          : `Stopped. ${newPosts.length} new posts (${allPosts.length} total).`;
         document.getElementById('countText').textContent =
-          'Markdown file download should appear shortly.';
+          'Save the file to your Obsidian vault.';
+      } catch (err) {
+        console.error('Magpie: download error:', err);
+        document.getElementById('statusText').textContent =
+          `Error: ${err.message}`;
       }
     } else {
       document.getElementById('statusText').textContent = isDone
